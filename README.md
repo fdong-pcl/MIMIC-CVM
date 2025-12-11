@@ -309,26 +309,25 @@ The following diagram illustrates the entire CVD multimodal data processing pipe
 
 ```mermaid
 flowchart TD
-    A0[Start] --> S0[Step 0: 生成死亡/再入院标签
+    A0[Start] --> S0[Step 0: Generate
 Mortality & Readmission Labels]
 
     S0 --> S1[Step 1: CVD ICD 匹配
 Coarse + Fine Category]
 
-    S1 --> S2A[Step 2A: 匹配 Notes
+    S1 --> S2A[Step 2A: Match Notes
 Radiology Notes / Discharge Summary]
-    S2A --> S2B[Step 2B: 匹配 CXR
+    S2A --> S2B[Step 2B: Match CXR
 Chest X-ray + CheXpert Labels]
-    S2B --> S2C[Step 2C: 匹配 ECG
+    S2B --> S2C[Step 2C: Match ECG
 Waveform + Measurements]
-    S2C --> S2D[Step 2D: 匹配 Echo
+    S2C --> S2D[Step 2D: Match Echo
 Ultrasound + DICOM Paths]
 
-    S2D --> S3[Step 3: 构建 Clean Dataset
-筛除无模态样本]
+    S2D --> S3[Step 3: Build Clean Dataset]
 
-    S3 --> OUT1[输出：step_3_cvd_mmdata_labels.csv.gz]
-    S3 --> OUT2[输出：step_3_cvd_mmdata_details.csv.gz]
+    S3 --> OUT1[Output：step_3_cvd_mmdata_labels.csv.gz]
+    S3 --> OUT2[Output：step_3_cvd_mmdata_details.csv.gz]
 ```
 
 ### ✔ 图示说明
