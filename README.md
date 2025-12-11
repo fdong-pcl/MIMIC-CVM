@@ -1,19 +1,19 @@
-# 🩺 1. 项目目标（Project Goal）
+# 🩺 1. Project Goal
 
-该流程旨在整合 MIMIC-IV（v3.1）中与心血管疾病（Cardiovascular Disease, **CVD**）相关的数据，并匹配患者在住院期间的 **多模态信息（Multimodal Data）**：
+This pipeline integrates cardiovascular disease (CVD)–related data from MIMIC-IV (v3.1) and matches **multimodal information collected during hospitalization**, including:
 
-- Notes（临床文本，如出院小结、影像报告）
-- CXR（胸部 X 光影像）
-- ECG（心电图 waveforms + 自动测量）
-- Echo（超声心动图）
+- **Notes** (clinical text such as discharge summaries and radiology reports)
+- **CXR** (chest X-ray images)
+- **ECG** (electrocardiogram waveforms and automated measurements)
+- **Echo** (echocardiography DICOM studies)
 
-最终得到一个 **多模态 CVD 住院队列**，可直接用于模型训练、风险预测或医学研究。
+The final outcome is a **multimodal CVD inpatient cohort**, directly usable for model training, risk prediction, and clinical research.
 
 ---
 
-# 📁 2. 数据目录结构（Directory Structure）
+# 📁 2. Directory Structure
 
-以下展现代码中使用的主要路径结构（已在代码中统一抽象为 PATHS 字典）：
+The following shows the main directory structure used by the pipeline (abstracted as the `PATHS` dictionary in the code):
 
 ```
 CVD_MMData/
@@ -32,235 +32,193 @@ CVD_MMData/
 
 ---
 
-# 🧩 3. 处理流程（Processing Pipeline）
+# 🧩 3. Processing Pipeline
 
-流程共包含 **Step 0 → Step 1 → Step 2A/B/C/D → Step 3** 五个阶段。
-
----
-
-# 📝 Step 0 — 生成死亡（Mortality）与再入院（Readmission）标签
-
-**目的：** 为每次住院（hadm_id）生成预测任务需要的标签。
-
-### ✔ 输入文件
-
-- admissions.csv.gz（住院时间）
-- patients.csv.gz（死亡日期）
-- diagnoses_icd.csv.gz（诊断）
-
-### ✔ 输出字段说明
-
-| 字段                  | 含义                       |
-| --------------------- | -------------------------- |
-| mortality_in_hospital | 是否在住院期间死亡         |
-| mortality_30d         | 出院后 30 日内死亡         |
-| readmission_30d_hosp  | 出院后 30 日内再次入院     |
-| readmission_30d_icu   | 出院后 30 日内再次入住 ICU |
-| days_disch_to_death   | 出院距离死亡的天数         |
-
-输出文件：`mimiciv_3_1_labels_details_[mode].csv.gz`
+The workflow consists of **Step 0 → Step 1 → Step 2A/B/C/D → Step 3**.
 
 ---
 
-# 💓 Step 1 — CVD 标签匹配与队列筛选
+# 📝 Step 0 — Mortality and Readmission Label Generation
 
-**目的：根据 ICD-9/ICD-10，识别 CVD 相关的住院记录。**
+**Purpose:** Generate prediction labels for each hospital admission (`hadm_id`).
 
-本步骤基于两个分类文件：
+### ✔ Input Files
 
-- `CVD_coarse_category.csv`（粗粒度，例如：
-  - **CHD** = Coronary Heart Disease 冠心病
-  - **HF** = Heart Failure 心力衰竭
-  - **VHD** = Valvular Heart Disease 瓣膜性心脏病
-    ）
-- `CVD_fine_category.csv`（细粒度，如 STEMI、NSTEMI、Ischemic Stroke 等）
+- `admissions.csv.gz` (admission/discharge times)
+- `patients.csv.gz` (date of death)
+- `diagnoses_icd.csv.gz` (diagnoses)
 
-### ✔ 输出字段
+### ✔ Output Fields
 
-| 字段                | 含义                          |
-| ------------------- | ----------------------------- |
-| CVD_coarse_category | 粗粒度分类（CHD/HF/VHD 等）   |
-| CVD_fine_category   | 细粒度分类（STEMI/Stroke 等） |
+| Field                 | Meaning                             |
+| --------------------- | ----------------------------------- |
+| mortality_in_hospital | Death occurred during admission     |
+| mortality_30d         | Death within 30 days post-discharge |
+| readmission_30d_hosp  | Hospital readmission within 30 days |
+| readmission_30d_icu   | ICU readmission within 30 days      |
+| days_disch_to_death   | Days from discharge to death        |
 
-输出文件：`step_1_details_cvd_only_[mode].csv.gz`
-
-仅保留 CVD 匹配到的住院记录。
+**Output file:** `mimiciv_3_1_labels_details_[mode].csv.gz`
 
 ---
 
-# 🩻 Step 2 — 多模态数据匹配（Multimodal Matching）
+# 💓 Step 1 — CVD Label Matching and Cohort Selection
 
-本阶段将 Step 1 中的 CVD 队列与四类模态进行“住院时间窗口”匹配。
+**Purpose:** Identify CVD-related admissions using ICD-9 and ICD-10 codes.
 
-匹配标准：
+This step uses two category mapping files:
 
-> **模态数据的时间戳 ∈ [admittime, dischtime]**
+- `CVD_coarse_category.csv` — coarse groups  
+  (e.g., **CHD** = Coronary Heart Disease, **HF** = Heart Failure, **VHD** = Valvular Heart Disease)
+- `CVD_fine_category.csv` — detailed subtypes  
+  (e.g., STEMI, NSTEMI, Ischemic Stroke)
 
-## 2A — Note（临床文本）匹配
+### ✔ Output Fields
 
-匹配：Radiology Notes、Discharge Summary
+| Field               | Meaning                                  |
+| ------------------- | ---------------------------------------- |
+| CVD_coarse_category | Coarse category (CHD/HF/VHD/etc.)        |
+| CVD_fine_category   | Fine-grained subtype (STEMI/Stroke/etc.) |
 
-输出字段示例：
+**Output file:** `step_1_details_cvd_only_[mode].csv.gz`
+
+Only CVD-matched admissions are retained.
+
+---
+
+# 🩻 Step 2 — Multimodal Data Matching
+
+Matches the Step 1 CVD cohort with four modalities using the **hospitalization time window**.
+
+Matching rule:
+
+> **Timestamp ∈ \[admittime, dischtime\]**
+
+---
+
+## 2A — Note Matching
+
+Matches radiology notes and discharge summaries.
+
+Example fields:
 
 - has_note
 - note_count
 - matched_note_ids
 - matched_note_times
 
-## 2B — CXR（胸片）匹配
+---
 
-匹配：metadata + CheXpert labels + DICOM 路径
+## 2B — CXR Matching
 
-输出字段：
+Matches metadata, CheXpert labels, and DICOM image paths.
+
+Example fields:
 
 - has_cxr
 - cxr_study_count
 - matched_cxr_image_paths
-- matched_cxr_CheXpert labels
+- matched_cxr_CheXpert
 
-## 2C — ECG（心电图）匹配
+---
 
-包含自动测量数值（rr_interval 等）与 note links。
+## 2C — ECG Matching
 
-输出字段：
+Includes automated measurements and linked notes.
+
+Example fields:
 
 - has_ecg
 - ecg_count
 - matched_ecg_waveform_paths
 
-## 2D — Echo（超声心动图）匹配
+---
 
-匹配 Echo study meta + DICOM 路径。
+## 2D — Echo Matching
 
-输出字段：
+Matches Echo metadata and DICOM paths.
+
+Example fields:
 
 - has_echo
 - echo_study_count
 - matched_echo_dicom_paths
 
-最终输出文件：
+**Final output:**  
 `step_2d_details_cvd_with_note_with_cxr_with_ecg_with_echo_[mode].csv.gz`
 
 ---
 
-# 🧼 Step 3 — CLEAN 版本（最终可用的数据）
+# 🧼 Step 3 — CLEAN Version (Final Dataset)
 
-**目的：只保留至少拥有一种模态数据的住院记录。**
+**Purpose:** Keep only admissions with **at least one** modality.
 
-筛选条件：
+Filter condition:
 
 ```
 has_note == 1 OR has_cxr == 1 OR has_ecg == 1 OR has_echo == 1
 ```
 
-输出两个文件：
+### ✔ Clean Labels (for training)
 
-### ✔ Clean Labels：用于训练
-
-字段包含：
+Fields include:
 
 - subject_id, hadm_id
-- ICD 标签（coarse/fine）
-- 预后标签（mortality, readmission）
-- 各模态是否存在（has\_\*）
+- ICD coarse/fine labels
+- outcome labels (mortality/readmission)
+- modality existence flags
 
-文件：`step_3_cvd_mmdata_labels_[mode].csv.gz`
-
-### ✔ Clean Details：用于加载模态内容
-
-包含所有路径列表、模态时间、列表字段。
-
-文件：`step_3_cvd_mmdata_details_[mode].csv.gz`
+File: `step_3_cvd_mmdata_labels_[mode].csv.gz`
 
 ---
 
----
+### ✔ Clean Details (for loading modality content)
 
-# **🩻 Step 2 & 3 — 多模态数据匹配与最终数据集（Detailed Outputs）**
+Contains all aggregated paths, timestamps, and list fields.
 
-本阶段是核心的数据整合环节。Step 2 生成原始模态数据和聚合的中间文件，Step 3 进行筛选和整理，产出最终可用于训练的 Clean 数据集。
-
-## **A. Step 2 — 多模态匹配（Multimodal Matching）**
-
-输出文件保存在 step2_multimodal_matching/ 目录下。
-
-### **📄 中间细节文件（Cohort Details Augmented）**
-
-这些文件在 Step 1 的 CVD 队列基础上，逐步加入各模态的匹配结果（has\_ 标志, count 计数, matched\_ 列表）。
-
-| 文件名                                                           | 描述                                  | 关键新增属性（列）                                                                                          |
-| :--------------------------------------------------------------- | :------------------------------------ | :---------------------------------------------------------------------------------------------------------- |
-| step_2a_details_cvd_with_note\_\[mode\].csv.gz                   | **Notes 匹配结果聚合。**              | has_note, note_count, matched_note_ids (列表)                                                               |
-| step_2b_details_cvd_with_note_with_cxr\_\[mode\].csv.gz          | **CXR 匹配结果聚合。**                | has_cxr, cxr_study_count, matched_cxr_dicom_ids (列表), matched_cxr\_\[CheXpert\] (14 个 CheXpert 标签列表) |
-| step_2c_details_cvd_with_note_with_cxr_with_ecg\_\[mode\].csv.gz | **ECG 匹配结果聚合。**                | has_ecg, ecg_count, matched_ecg_waveform_paths (列表), matched_ecg\_\[Measurement\] (机器测量结果列表)      |
-| step_2d_details_cvd_with_all_mm\_\[mode\].csv.gz                 | **所有模态最终聚合（Step 3 输入）。** | has_echo, echo_study_count, matched_echo_dicom_paths (列表)                                                 |
-
-### **🖼 原始模态数据及元数据文件（Raw Modality Data）**
-
-这些文件包含匹配到的原始文本内容、详细元数据或测量结果。
-
-| 文件名                                        | 描述                                          | 包含信息                                                                      |
-| :-------------------------------------------- | :-------------------------------------------- | :---------------------------------------------------------------------------- |
-| cvd_matched_notes_content\_\[mode\].csv.gz    | **匹配到的病历笔记文本。**                    | subject_id, hadm_id, note_id, text (原始笔记文本)                             |
-| cvd_matched_cxr_reports\_\[mode\].csv.gz      | **匹配到的 CXR 报告文本。**                   | subject_id, hadm_id, study_id, report_text, cxr_report_path                   |
-| cvd_matched_cxr_metadata\_\[mode\].csv.gz     | **匹配到的 CXR 图像元数据及 CheXpert 标签。** | subject_id, hadm_id, dicom_id, cxr_image_path_relative \+ 14 个 CheXpert 标签 |
-| cvd_matched_ecg_measurements\_\[mode\].csv.gz | **匹配到的 ECG 机器测量结果。**               | subject_id, study_id, ecg_time, 详细测量参数（如 rr_interval, p_axis 等）     |
-| cvd_matched_ecg_details\_\[mode\].csv.gz      | **匹配到的 ECG 记录详细信息。**               | 包含测量结果、波形路径 (ecg_waveform_path_relative) 和关联的 Note ID          |
-| cvd_matched_echo_details\_\[mode\].csv.gz     | **匹配到的 Echo 研究详细信息。**              | subject_id, hadm_id, study_id, echo_dicom_path_relative, 关联的 Note ID       |
-
-## **B. Step 3 — CLEAN 版本（最终可用的数据）**
-
-目的：只保留至少拥有一种模态数据的住院记录。  
-筛选条件：has_note \== 1 OR has_cxr \== 1 OR has_ecg \== 1 OR has_echo \== 1  
-输出文件保存在 step2_multimodal_matching/step_3_clean_version/ 目录下。
-
-### **✔ Clean Labels：用于训练**
-
-| 文件名                                        | 描述                                                                                           | 核心字段（列）                                                                                                                 |
-| :-------------------------------------------- | :--------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
-| **step_3_cvd_mmdata_labels\_\[mode\].csv.gz** | **精简版标签集：** 仅包含 ID、诊断、预后标签、以及模态存在标志和计数。**用于直接的模型训练。** | subject_id, hadm_id, CVD_coarse/fine_category, mortality/readmission 标签, has_note, note_count, has_cxr, cxr_study_count 等。 |
-
-### **✔ Clean Details：用于加载模态内容**
-
-| 文件名                                         | 描述                                                                                                                          | 核心字段（列）                                                                                           |
-| :--------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------- |
-| **step_3_cvd_mmdata_details\_\[mode\].csv.gz** | **完整版细节集：** 包含所有标签、时间锚点和所有模态的**聚合列表**（如路径、ID、测量值列表）。**用于数据加载和模态内容检索。** | 包含 step_3_cvd_mmdata_labels 的所有字段，并新增 admittime 等时间列，以及所有 matched\_ 开头的列表字段。 |
+File: `step_3_cvd_mmdata_details_[mode].csv.gz`
 
 ---
 
-# **📊 输出数据示例说明（常用字段）**
+# 🩻 Step 2 & Step 3 — Detailed Outputs
 
-| 字段                     | 含义                                     |
-| :----------------------- | :--------------------------------------- |
-| matched_cxr_image_paths  | 与 hadm_id 匹配的所有 CXR DICOM 影像路径 |
-| matched_ecg_study_ids    | 匹配到的 ECG study ID                    |
-| matched_echo_dicom_paths | Echo DICOM 文件路径列表                  |
-| CVD_coarse_category      | 心血管疾病粗分类                         |
-| mortality_30d            | 是否在出院 30 天内死亡                   |
+## A. Step 2 — Multimodal Matching Outputs
 
----
+Saved under `step2_multimodal_matching/`.
 
-# 📊 输出数据示例说明（常用字段）
+### 📄 Intermediate Aggregated Files
 
-| 字段                     | 含义                                     |
-| ------------------------ | ---------------------------------------- |
-| matched_cxr_image_paths  | 与 hadm_id 匹配的所有 CXR DICOM 影像路径 |
-| matched_ecg_study_ids    | 匹配到的 ECG study ID                    |
-| matched_echo_dicom_paths | Echo DICOM 文件路径列表                  |
-| CVD_coarse_category      | 心血管疾病粗分类                         |
-| mortality_30d            | 是否在出院 30 天内死亡                   |
+| File name                                                     | Description    | Key fields                                                       |
+| ------------------------------------------------------------- | -------------- | ---------------------------------------------------------------- |
+| step*2a_details_cvd_with_note*[mode].csv.gz                   | Notes matching | has_note, note_count, matched_note_ids                           |
+| step*2b_details_cvd_with_note_with_cxr*[mode].csv.gz          | CXR matching   | has_cxr, cxr_study_count, matched_cxr_dicom_ids, CheXpert labels |
+| step*2c_details_cvd_with_note_with_cxr_with_ecg*[mode].csv.gz | ECG matching   | has_ecg, ecg_count, waveform paths, ECG measurements             |
+| step*2d_details_cvd_with_all_mm*[mode].csv.gz                 | All modalities | includes Echo fields                                             |
 
 ---
 
-# ▶ 如何运行代码
+### 🖼 Raw Modality Files
 
-默认运行 DEBUG 模式（速度快）：
+| File                                       | Description                     | Fields                                   |
+| ------------------------------------------ | ------------------------------- | ---------------------------------------- |
+| cvd*matched_notes_content*[mode].csv.gz    | Matched note text               | note_id, text                            |
+| cvd*matched_cxr_reports*[mode].csv.gz      | Matched CXR report text         | report_text, report_path                 |
+| cvd*matched_cxr_metadata*[mode].csv.gz     | CXR metadata + CheXpert         | dicom_id, image_path, 14 CheXpert labels |
+| cvd*matched_ecg_measurements*[mode].csv.gz | ECG machine measurements        | rr_interval, p_axis, etc.                |
+| cvd*matched_ecg_details*[mode].csv.gz      | ECG waveform paths + note links | waveform_path, measurement fields        |
+| cvd*matched_echo_details*[mode].csv.gz     | Echo DICOM metadata             | echo_dicom_paths                         |
+
+---
+
+# ▶ Running the Code
+
+Default (fast) DEBUG mode:
 
 ```
 python extract_cvd_multimodal_pipeline.py --mode DEBUG
 ```
 
-运行完整数据（FULL 模式）：
+Full dataset (FULL mode):
 
 ```
 python extract_cvd_multimodal_pipeline.py --mode FULL
@@ -268,18 +226,18 @@ python extract_cvd_multimodal_pipeline.py --mode FULL
 
 ---
 
-# 📌 心血管疾病 ICD 匹配体系（CVD 分类体系）
+# 📌 Cardiovascular Disease ICD Matching System (CVD Classification System)
 
-本项目的 CVD 匹配基于 **两级分类体系**：
+The CVD matching in this project is based on a **two-tier classification system**:
 
-- **粗粒度分类（Coarse Categories）**：按照器官系统或大类疾病分组
-- **细粒度分类（Fine Categories）**：对应临床常用亚型（如 STEMI、NSTEMI、TIA 等）
+- **Coarse Categories**: Grouped by organ system or major disease class.
+- **Fine Categories\***: Correspond to common clinical subtypes (e.g., STEMI, NSTEMI, TIA, etc.).
 
 ---
 
-## 🟥 粗粒度（Coarse Categories）中英文 + ICD 范围
+## 🟥 Coarse Categories (English/Chinese) + ICD Ranges
 
-以下与代码中 `CVD_coarse_category.csv` 对应：
+The following corresponds to `CVD_coarse_category.csv` in the code:
 
 | InternalCode | ICD9 Range | ICD10 Range   | English Name                                                | 中文名称             |
 | ------------ | ---------- | ------------- | ----------------------------------------------------------- | -------------------- |
@@ -292,13 +250,13 @@ python extract_cvd_multimodal_pipeline.py --mode FULL
 | **CVD_G**    | 440–448    | I70–I79       | Arterial / arteriolar / capillary diseases                  | 动脉与微血管疾病     |
 | **CVD_H**    | 451–459    | I80–I89       | Venous and lymphatic diseases                               | 静脉、淋巴管疾病     |
 
-> 📝 粗分类常用于高层疾病研究，如“缺血性心脏病（CVD_C）”或“脑血管病（CVD_F）”。
+> 📝 Coarse categories are often used for high-level disease studies, such as "Ischemic heart diseases (CVD_C)" or "Cerebrovascular diseases (CVD_F)"。
 
 ---
 
-## 🟦 细粒度（Fine Categories）中英文 + ICD 范围
+## 🟦 Fine Categories (English/Chinese) + ICD Ranges
 
-以下与代码中 `CVD_fine_category.csv` 对应，包含更临床化的疾病实体，如 STEMI、心衰、TIA、脑梗等：
+The following corresponds to `CVD_fine_category.csv` in the code, containing more clinical disease entities:：
 
 | InternalCode | ICD9 Code | ICD10 Code | English Name                                          | 中文名称                          |
 | ------------ | --------- | ---------- | ----------------------------------------------------- | --------------------------------- |
@@ -329,26 +287,25 @@ python extract_cvd_multimodal_pipeline.py --mode FULL
 
 ---
 
-# 📚 附录 A — 数据源（PhysioNet Data Sources）
+# 📚 Appendix A — Data Sources (PhysioNet Data Sources)
 
-以下列出本项目使用的所有 PhysioNet 官方数据源，包含版本号与访问链接，便于复现及环境配置。
+The following lists all official PhysioNet data sources used in this project, including version numbers and access links, for reproducibility and environment setup.
 
-### **🌐 PhysioNet 数据源头**
+### **🌐 PhysioNet Data Sources**
 
-| 数据集            | 版本   | PhysioNet 链接                                   |
-| :---------------- | :----- | :----------------------------------------------- |
-| **MIMIC-IV 核心** | v3.1   | https://physionet.org/content/mimiciv/3.1/       |
-| **MIMIC-IV Note** | v2.2   | https://physionet.org/content/mimic-iv-note/2.2/ |
-| **MIMIC-CXR**     | v2.1.0 | https://physionet.org/content/mimic-cxr/2.1.0/   |
-| **MIMIC-IV ECG**  | v1.0   | https://physionet.org/content/mimic-iv-ecg/1.0/  |
-| **MIMIC-IV Echo** | v0.1   | https://physionet.org/content/mimic-iv-echo/0.1/ |
+| Data              | Version | PhysioNet Link                                   |
+| :---------------- | :------ | :----------------------------------------------- |
+| **MIMIC-IV Core** | v3.1    | https://physionet.org/content/mimiciv/3.1/       |
+| **MIMIC-IV Note** | v2.2    | https://physionet.org/content/mimic-iv-note/2.2/ |
+| **MIMIC-CXR**     | v2.1.0  | https://physionet.org/content/mimic-cxr/2.1.0/   |
+| **MIMIC-IV ECG**  | v1.0    | https://physionet.org/content/mimic-iv-ecg/1.0/  |
+| **MIMIC-IV Echo** | v0.1    | https://physionet.org/content/mimic-iv-echo/0.1/ |
 
 ---
 
-# 📊 附录 B — 多模态匹配流程图（Multimodal Matching Flowchart）
+# 📊 Appendix B — Multimodal Matching Flowchart (CVD Pipeline)
 
-下图展示整个 CVD 多模态数据处理流水线，从 Step 0 标签生成 → Step 1 CVD 匹配 → Step 2 多模态匹配 → Step 3 Clean 数据集构建。  
-该图示特别适合 README 展示、论文 Methods 流程图、项目报告等用途。
+The following diagram illustrates the entire CVD multimodal data processing pipeline, from Step 0 label generation → Step 1 CVD matching → Step 2 multimodal matching → Step 3 Clean dataset construction. This diagram is particularly suitable for README display, Methods flowcharts, and project reports.
 
 ```mermaid
 flowchart TD
@@ -376,7 +333,7 @@ Ultrasound + DICOM Paths]
 
 ### ✔ 图示说明
 
-- **Step 0**：为每次住院生成基础标签（死亡、再入院）。
-- **Step 1**：利用 ICD9/ICD10 匹配粗粒度及细粒度 CVD 分类。
-- **Step 2A–2D**：逐步将 Notes、CXR、ECG、Echo 按住院时间窗口进行匹配。
-- **Step 3**：仅保留至少拥有一种模态的 CVD 入院记录，形成最终数据集。
+- **Step 0**：Generates basic labels for each admission (mortality, readmission).
+- **Step 1**：Uses ICD9/ICD10 to match coarse and fine-grained CVD classifications.
+- **Step 2A–2D**：Progressively matches Notes, CXR, ECG, and Echo based on the admission time window.
+- **Step 3**：Retains only CVD admission records with at least one modality, forming the final dataset.
