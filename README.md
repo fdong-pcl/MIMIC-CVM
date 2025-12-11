@@ -312,7 +312,7 @@ flowchart TD
     A0[Start] --> S0[Step 0: Generate
 Mortality & Readmission Labels]
 
-    S0 --> S1[Step 1: CVD ICD 匹配
+    S0 --> S1[Step 1: CVD ICD Match
 Coarse + Fine Category]
 
     S1 --> S2A[Step 2A: Match Notes
